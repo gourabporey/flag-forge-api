@@ -8,7 +8,7 @@ RUN dotnet restore
 
 # Copy the rest of the application code and build it
 COPY . ./
-RUN dotnet publish "feature-flag-manager-backend.generated.sln" -c Release -o /out
+RUN dotnet publish "FlagForge.generated.sln" -c Release -o /out
 
 # Use the official .NET runtime image for running the application
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
@@ -20,4 +20,4 @@ COPY --from=build /out .
 EXPOSE 8080
 
 # Set the entry point for the container to run the application
-ENTRYPOINT ["dotnet", "feature-flag-manager-backend.dll"]
+ENTRYPOINT ["dotnet", "FlagForge.dll"]

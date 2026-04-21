@@ -1,39 +1,85 @@
-using feature_flag_manager_backend.Data.Models;
-using feature_flag_manager_backend.Data.ViewModels;
+using FlagForge.Data.Models;
+using FlagForge.Data.ViewModels;
+using Microsoft.EntityFrameworkCore;
 
-namespace feature_flag_manager_backend.Data.Services;
-public class FeatureFlagService
+namespace FlagForge.Data.Services;
+
+public class FeatureFlagService(AppDbContext context)
 {
-    private AppDbContext _context;
+    private const string DefaultTenantName = "Default";
+    private readonly AppDbContext _context = context;
 
-    public FeatureFlagService(AppDbContext context)
+    public async Task<FeatureFlag> AddFeatureFlagAsync(FeatureFlagVM featureFlag, CancellationToken cancellationToken = default)
     {
-        _context = context;
-    }
+        var environmentId = featureFlag.EnvironmentId
+            ?? await GetOrCreateLegacyEnvironmentIdAsync(featureFlag.Environment, cancellationToken);
 
-    public FeatureFlag AddFeatureFlag(FeatureFlagVM featureFlag)
-    {
-        var lastTimeUpdated = DateTime.Now;
-
-        var _featureFlag = new FeatureFlag()
+        var flag = new FeatureFlag
         {
+            EnvironmentId = environmentId,
             Name = featureFlag.Name,
-            Description = featureFlag.Description,
-            Tags = featureFlag.Tags,
-            IsEnabled = featureFlag.IsEnabled,
-            Environment = featureFlag.Environment,
-            CreatedAt = lastTimeUpdated,
-            LastUpdatedAt = lastTimeUpdated
+            Enabled = featureFlag.IsEnabled,
+            Rules = string.IsNullOrWhiteSpace(featureFlag.Rules) ? "{}" : featureFlag.Rules,
+            Version = 1,
+            UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        _context.FeatureFlags.Add(_featureFlag);
-        _context.SaveChanges();
+        _context.FeatureFlags.Add(flag);
+        await _context.SaveChangesAsync(cancellationToken);
 
-        return _featureFlag;
+        return flag;
     }
 
-    public IEnumerable<FeatureFlag> GetAllFeatureFlags()
+    public async Task<IReadOnlyList<FeatureFlag>> GetAllFeatureFlagsAsync(CancellationToken cancellationToken = default)
     {
-        return _context.FeatureFlags;
+        return await _context.FeatureFlags
+            .AsNoTracking()
+            .OrderBy(x => x.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<Guid> GetOrCreateLegacyEnvironmentIdAsync(string? environmentName, CancellationToken cancellationToken)
+    {
+        var normalizedEnvironmentName = string.IsNullOrWhiteSpace(environmentName)
+            ? "dev"
+            : environmentName.Trim().ToLowerInvariant();
+
+        var existingEnvironment = await _context.Environments
+            .AsNoTracking()
+            .Where(x => x.Tenant!.Name == DefaultTenantName && x.Name == normalizedEnvironmentName)
+            .Select(x => new { x.EnvironmentId })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (existingEnvironment is not null)
+        {
+            return existingEnvironment.EnvironmentId;
+        }
+
+        var tenant = await _context.Tenants
+            .SingleOrDefaultAsync(x => x.Name == DefaultTenantName, cancellationToken);
+
+        if (tenant is null)
+        {
+            tenant = new Tenant
+            {
+                Name = DefaultTenantName,
+                Plan = TenantPlan.Tier1,
+                CreatedAt = DateTimeOffset.UtcNow
+            };
+
+            _context.Tenants.Add(tenant);
+        }
+
+        var environment = new FeatureFlagEnvironment
+        {
+            Tenant = tenant,
+            Name = normalizedEnvironmentName,
+            ApiKey = $"local-{tenant.TenantId:N}-{normalizedEnvironmentName}"
+        };
+
+        _context.Environments.Add(environment);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return environment.EnvironmentId;
     }
 }

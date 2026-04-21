@@ -1,29 +1,25 @@
-namespace feature_flag_manager_backend.Controllers;
-using feature_flag_manager_backend.Data.Models;
-using feature_flag_manager_backend.Data.Services;
-using feature_flag_manager_backend.Data.ViewModels;
+namespace FlagForge.Controllers;
+
+using FlagForge.Data.Models;
+using FlagForge.Data.Services;
+using FlagForge.Data.ViewModels;
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
 [Route("api/feature-flags")]
-public class FeatureFlagController : ControllerBase
+public class FeatureFlagController(FeatureFlagService featureFlagService) : ControllerBase
 {
-    private FeatureFlagService _featureFlagService;
-
-    public FeatureFlagController(FeatureFlagService featureFlagService)
-    {
-        _featureFlagService = featureFlagService;
-    }
+    private readonly FeatureFlagService _featureFlagService = featureFlagService;
 
     [HttpPost]
-    public FeatureFlag PostFeatureFlag([FromBody] FeatureFlagVM featureFlag)
+    public async Task<FeatureFlag> PostFeatureFlag([FromBody] FeatureFlagVM featureFlag, CancellationToken cancellationToken)
     {
-        return _featureFlagService.AddFeatureFlag(featureFlag);
+        return await _featureFlagService.AddFeatureFlagAsync(featureFlag, cancellationToken);
     }
 
     [HttpGet]
-    public IEnumerable<FeatureFlag> GetFeatureFlags()
+    public async Task<IReadOnlyList<FeatureFlag>> GetFeatureFlags(CancellationToken cancellationToken)
     {
-        return _featureFlagService.GetAllFeatureFlags();
+        return await _featureFlagService.GetAllFeatureFlagsAsync(cancellationToken);
     }
 }

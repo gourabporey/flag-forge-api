@@ -1,14 +1,17 @@
-namespace feature_flag_manager_backend.Data;
+namespace FlagForge.Data;
 
-using feature_flag_manager_backend.Data.Models;
+using FlagForge.Data.Models;
 using Microsoft.EntityFrameworkCore;
 
-public class AppDbContext : DbContext
+public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
-    public DbSet<FeatureFlag> FeatureFlags { get; set; }
+    public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<FeatureFlagEnvironment> Environments => Set<FeatureFlagEnvironment>();
+    public DbSet<FeatureFlag> FeatureFlags => Set<FeatureFlag>();
+    public DbSet<UsageAuditLog> UsageAuditLogs => Set<UsageAuditLog>();
 
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
     }
 }
