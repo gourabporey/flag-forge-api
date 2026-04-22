@@ -74,7 +74,7 @@ public class FeatureFlagService(AppDbContext context)
         {
             Tenant = tenant,
             Name = normalizedEnvironmentName,
-            ApiKey = $"local-{tenant.TenantId:N}-{normalizedEnvironmentName}"
+            ApiKeyHash = EnvironmentApiKeyHasher.Hash($"local-{tenant.TenantId:N}-{normalizedEnvironmentName}")
         };
 
         _context.Environments.Add(environment);

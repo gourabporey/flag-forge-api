@@ -1,25 +1,43 @@
 namespace FlagForge.Controllers;
 
-using FlagForge.Data.Models;
-using FlagForge.Data.Services;
-using FlagForge.Data.ViewModels;
+using Asp.Versioning;
+using Data.Models;
+using Data.Services;
+using Data.ViewModels;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Swashbuckle.AspNetCore.Annotations;
 
+[Authorize]
 [ApiController]
-[Route("api/feature-flags")]
+[ApiVersion(1.0)]
+[SwaggerTag("Create and Get Feature flags")]
+[Route("api/v{version:apiVersion}/feature-flags")]
 public class FeatureFlagController(FeatureFlagService featureFlagService) : ControllerBase
 {
-    private readonly FeatureFlagService _featureFlagService = featureFlagService;
-
     [HttpPost]
-    public async Task<FeatureFlag> PostFeatureFlag([FromBody] FeatureFlagVM featureFlag, CancellationToken cancellationToken)
+    [SwaggerOperation(OperationId = "FeatureFlags.CreateFeatureFlag")]
+    [ProducesResponseType(typeof(FeatureFlag), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<FeatureFlag>> CreateFeatureFlag(
+        [FromBody] FeatureFlagVM featureFlag,
+        CancellationToken ct
+    )
     {
-        return await _featureFlagService.AddFeatureFlagAsync(featureFlag, cancellationToken);
+        var flag = await featureFlagService.AddFeatureFlagAsync(featureFlag, ct);
+        return Created($"api/v1/feature-flags/{flag.FlagId}", flag);
     }
 
     [HttpGet]
-    public async Task<IReadOnlyList<FeatureFlag>> GetFeatureFlags(CancellationToken cancellationToken)
+    [SwaggerOperation(OperationId = "FeatureFlags.GetAllFeatureFlags")]
+    [ProducesResponseType(typeof(IReadOnlyList<FeatureFlag>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<IReadOnlyList<FeatureFlag>>> GetFeatureFlags(CancellationToken ct)
     {
-        return await _featureFlagService.GetAllFeatureFlagsAsync(cancellationToken);
+        return Ok(await featureFlagService.GetAllFeatureFlagsAsync(ct));
     }
 }

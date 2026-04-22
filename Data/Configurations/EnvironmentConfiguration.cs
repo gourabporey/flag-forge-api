@@ -16,11 +16,11 @@ public class EnvironmentConfiguration : IEntityTypeConfiguration<FeatureFlagEnvi
             .HasMaxLength(50)
             .IsRequired();
 
-        builder.Property(x => x.ApiKey)
+        builder.Property(x => x.ApiKeyHash)
             .HasMaxLength(128)
             .IsRequired();
 
-        builder.HasIndex(x => x.ApiKey)
+        builder.HasIndex(x => x.ApiKeyHash)
             .IsUnique();
 
         builder.HasIndex(x => new { x.TenantId, x.Name })

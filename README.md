@@ -51,12 +51,14 @@ Represents an isolated runtime environment for a tenant.
 | `EnvironmentId` | `uuid`         | Primary key                       |
 | `TenantId`      | `uuid`         | FK to `Tenants`                   |
 | `Name`          | `varchar(50)`  | Example: `dev`, `staging`, `prod` |
-| `ApiKey`        | `varchar(128)` | Unique environment API key        |
+| `ApiKeyHash`    | `varchar(128)` | Unique SHA-256 hash of the API key |
 
 Indexes:
 
-- Unique `ApiKey`
+- Unique `ApiKeyHash`
 - Unique `{ TenantId, Name }`
+
+The raw environment API key is returned only when an environment is created. Persisted data stores the SHA-256 hash, not the secret itself.
 
 ### FeatureFlags
 

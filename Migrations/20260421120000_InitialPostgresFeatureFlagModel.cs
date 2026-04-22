@@ -34,7 +34,7 @@ public partial class InitialPostgresFeatureFlagModel : Migration
                 EnvironmentId = table.Column<Guid>(type: "uuid", nullable: false),
                 TenantId = table.Column<Guid>(type: "uuid", nullable: false),
                 Name = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
-                ApiKey = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false)
+                ApiKeyHash = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false)
             },
             constraints: table =>
             {
@@ -99,9 +99,9 @@ public partial class InitialPostgresFeatureFlagModel : Migration
             });
 
         migrationBuilder.CreateIndex(
-            name: "IX_Environments_ApiKey",
+            name: "IX_Environments_ApiKeyHash",
             table: "Environments",
-            column: "ApiKey",
+            column: "ApiKeyHash",
             unique: true);
 
         migrationBuilder.CreateIndex(

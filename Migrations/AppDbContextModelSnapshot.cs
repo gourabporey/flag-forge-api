@@ -40,12 +40,12 @@ partial class AppDbContextModelSnapshot : ModelSnapshot
         modelBuilder.Entity("FlagForge.Data.Models.FeatureFlagEnvironment", b =>
         {
             b.Property<Guid>("EnvironmentId").HasColumnType("uuid");
-            b.Property<string>("ApiKey").IsRequired().HasMaxLength(128).HasColumnType("character varying(128)");
+            b.Property<string>("ApiKeyHash").IsRequired().HasMaxLength(128).HasColumnType("character varying(128)");
             b.Property<string>("Name").IsRequired().HasMaxLength(50).HasColumnType("character varying(50)");
             b.Property<Guid>("TenantId").HasColumnType("uuid");
 
             b.HasKey("EnvironmentId");
-            b.HasIndex("ApiKey").IsUnique();
+            b.HasIndex("ApiKeyHash").IsUnique();
             b.HasIndex("TenantId", "Name").IsUnique();
             b.ToTable("Environments", (string)null);
         });
