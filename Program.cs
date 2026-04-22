@@ -1,10 +1,15 @@
 using Asp.Versioning;
+using System.Text;
+using FlagForge.Auth;
 using FlagForge.Data;
+using FlagForge.Middleware;
 using FlagForge.Data.Services;
 using FlagForge.Data.Validations;
 using FlagForge.Data.ViewModels;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +17,15 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddTransient<FeatureFlagService>();
 builder.Services.AddTransient<TenantService>();
 builder.Services.AddTransient<EnvironmentService>();
+builder.Services.AddTransient<AuthService>();
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+
+var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
+    ?? throw new InvalidOperationException("Missing configuration: Jwt");
+if (string.IsNullOrWhiteSpace(jwtOptions.Key) || Encoding.UTF8.GetByteCount(jwtOptions.Key) < 32)
+{
+    throw new InvalidOperationException("Jwt:Key must be at least 32 bytes.");
+}
 
 const int apiVersion = 1;
 builder
@@ -29,6 +43,23 @@ builder
     });
 
 builder.Services.AddControllers();
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtOptions.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
+builder.Services.AddAuthorization();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddProblemDetails();
@@ -51,6 +82,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseMiddleware<ApiKeyMiddleware>();
+app.UseAuthentication();
 app.UseAuthorization();
 app.UseExceptionHandler();
 app.UseStatusCodePages();

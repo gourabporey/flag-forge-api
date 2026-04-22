@@ -59,6 +59,16 @@ public class EnvironmentService(AppDbContext context)
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<bool> EnvironmentBelongsToTenantAsync(
+        Guid environmentId,
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.Environments
+            .AsNoTracking()
+            .AnyAsync(x => x.EnvironmentId == environmentId && x.TenantId == tenantId, cancellationToken);
+    }
+
     private async Task<string> GenerateUniqueApiKeyAsync(CancellationToken cancellationToken)
     {
         while (true)

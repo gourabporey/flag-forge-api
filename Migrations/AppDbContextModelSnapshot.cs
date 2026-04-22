@@ -50,6 +50,36 @@ partial class AppDbContextModelSnapshot : ModelSnapshot
             b.ToTable("Environments", (string)null);
         });
 
+        modelBuilder.Entity("FlagForge.Data.Models.RefreshToken", b =>
+        {
+            b.Property<Guid>("Id").HasColumnType("uuid");
+            b.Property<DateTimeOffset>("CreatedAt").HasColumnType("timestamp with time zone");
+            b.Property<DateTimeOffset>("ExpiresAt").HasColumnType("timestamp with time zone");
+            b.Property<bool>("IsRevoked").HasColumnType("boolean");
+            b.Property<string>("Token").IsRequired().HasMaxLength(200).HasColumnType("character varying(200)");
+            b.Property<Guid>("UserId").HasColumnType("uuid");
+
+            b.HasKey("Id");
+            b.HasIndex("Token").IsUnique();
+            b.HasIndex("UserId", "ExpiresAt");
+            b.ToTable("RefreshTokens", (string)null);
+        });
+
+        modelBuilder.Entity("FlagForge.Data.Models.Role", b =>
+        {
+            b.Property<int>("RoleId").HasColumnType("integer");
+            b.Property<string>("Name").IsRequired().HasMaxLength(50).HasColumnType("character varying(50)");
+
+            b.HasKey("RoleId");
+            b.HasIndex("Name").IsUnique();
+            b.ToTable("Roles", (string)null);
+
+            b.HasData(
+                new { RoleId = 1, Name = "Admin" },
+                new { RoleId = 2, Name = "Developer" },
+                new { RoleId = 3, Name = "Viewer" });
+        });
+
         modelBuilder.Entity("FlagForge.Data.Models.Tenant", b =>
         {
             b.Property<Guid>("TenantId").HasColumnType("uuid");
@@ -75,6 +105,41 @@ partial class AppDbContextModelSnapshot : ModelSnapshot
             b.HasIndex("EnvironmentId", "Timestamp");
             b.HasIndex("TenantId", "Timestamp");
             b.ToTable("UsageAuditLogs", (string)null);
+        });
+
+        modelBuilder.Entity("FlagForge.Data.Models.User", b =>
+        {
+            b.Property<Guid>("UserId").HasColumnType("uuid");
+            b.Property<DateTimeOffset>("CreatedAt").HasColumnType("timestamp with time zone");
+            b.Property<string>("Email").IsRequired().HasMaxLength(320).HasColumnType("character varying(320)");
+            b.Property<string>("FirstName").IsRequired().HasMaxLength(100).HasColumnType("character varying(100)");
+            b.Property<bool>("IsActive").HasColumnType("boolean");
+            b.Property<string>("LastName").IsRequired().HasMaxLength(100).HasColumnType("character varying(100)");
+            b.Property<string>("PasswordHash").IsRequired().HasMaxLength(200).HasColumnType("character varying(200)");
+
+            b.HasKey("UserId");
+            b.HasIndex("Email").IsUnique();
+            b.ToTable("Users", (string)null);
+        });
+
+        modelBuilder.Entity("FlagForge.Data.Models.UserRole", b =>
+        {
+            b.Property<Guid>("UserId").HasColumnType("uuid");
+            b.Property<int>("RoleId").HasColumnType("integer");
+
+            b.HasKey("UserId", "RoleId");
+            b.HasIndex("RoleId");
+            b.ToTable("UserRoles", (string)null);
+        });
+
+        modelBuilder.Entity("FlagForge.Data.Models.UserTenant", b =>
+        {
+            b.Property<Guid>("UserId").HasColumnType("uuid");
+            b.Property<Guid>("TenantId").HasColumnType("uuid");
+
+            b.HasKey("UserId", "TenantId");
+            b.HasIndex("TenantId");
+            b.ToTable("UserTenants", (string)null);
         });
 
         modelBuilder.Entity("FlagForge.Data.Models.FeatureFlag", b =>
@@ -117,14 +182,74 @@ partial class AppDbContextModelSnapshot : ModelSnapshot
             b.Navigation("Tenant");
         });
 
+        modelBuilder.Entity("FlagForge.Data.Models.RefreshToken", b =>
+        {
+            b.HasOne("FlagForge.Data.Models.User", "User")
+                .WithMany("RefreshTokens")
+                .HasForeignKey("UserId")
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+
+            b.Navigation("User");
+        });
+
+        modelBuilder.Entity("FlagForge.Data.Models.UserRole", b =>
+        {
+            b.HasOne("FlagForge.Data.Models.Role", "Role")
+                .WithMany("UserRoles")
+                .HasForeignKey("RoleId")
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+
+            b.HasOne("FlagForge.Data.Models.User", "User")
+                .WithMany("UserRoles")
+                .HasForeignKey("UserId")
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+
+            b.Navigation("Role");
+            b.Navigation("User");
+        });
+
+        modelBuilder.Entity("FlagForge.Data.Models.UserTenant", b =>
+        {
+            b.HasOne("FlagForge.Data.Models.Tenant", "Tenant")
+                .WithMany("UserTenants")
+                .HasForeignKey("TenantId")
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+
+            b.HasOne("FlagForge.Data.Models.User", "User")
+                .WithMany("UserTenants")
+                .HasForeignKey("UserId")
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+
+            b.Navigation("Tenant");
+            b.Navigation("User");
+        });
+
         modelBuilder.Entity("FlagForge.Data.Models.FeatureFlagEnvironment", b =>
         {
             b.Navigation("FeatureFlags");
         });
 
+        modelBuilder.Entity("FlagForge.Data.Models.Role", b =>
+        {
+            b.Navigation("UserRoles");
+        });
+
         modelBuilder.Entity("FlagForge.Data.Models.Tenant", b =>
         {
             b.Navigation("Environments");
+            b.Navigation("UserTenants");
+        });
+
+        modelBuilder.Entity("FlagForge.Data.Models.User", b =>
+        {
+            b.Navigation("RefreshTokens");
+            b.Navigation("UserRoles");
+            b.Navigation("UserTenants");
         });
 #pragma warning restore 612, 618
     }
