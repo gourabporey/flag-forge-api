@@ -1,9 +1,11 @@
 using FlagForge.Data.Services;
 using FlagForge.Extensions;
 using FlagForge.Middleware;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.ConfigureLogging();
 builder.Services.AddTransient<FeatureFlagService>();
 builder.Services.AddTransient<TenantService>();
 builder.Services.AddTransient<EnvironmentService>();
@@ -27,6 +29,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "FlagForge v1"));
 }
 
+app.UseSerilogRequestLogging();
 app.UseHttpsRedirection();
 app.UseMiddleware<ApiKeyMiddleware>();
 app.UseCors();

@@ -6,6 +6,8 @@ using FlagForge.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using NewRelic.LogEnrichers.Serilog;
+using Serilog;
 
 namespace FlagForge.Extensions;
 
@@ -96,5 +98,15 @@ public static class WebApplicationBuilderExtensions
             ?? throw new InvalidOperationException("Missing configuration : DefaultConnectionString");
         
         builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+    }
+
+    public static void ConfigureLogging(this WebApplicationBuilder builder)
+    {
+        Log.Logger = new LoggerConfiguration()
+            .Enrich.WithNewRelicLogsInContext()
+            .WriteTo.Console()
+            .CreateLogger();
+
+        builder.Host.UseSerilog();
     }
 }
