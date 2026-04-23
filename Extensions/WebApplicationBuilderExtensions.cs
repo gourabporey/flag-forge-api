@@ -21,6 +21,8 @@ public static class WebApplicationBuilderExtensions
     public static void AddCustomCors(this WebApplicationBuilder builder)
     {
         var allowedOrigins = builder.Configuration.GetSection(CorsAllowedOrigin).Get<string[]>();
+        
+        Log.Information("Allowed Origins: {AllowedOrigins}", allowedOrigins);
 
         if (allowedOrigins is null || allowedOrigins.Length == 0)
         {
