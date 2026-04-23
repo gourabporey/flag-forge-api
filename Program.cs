@@ -1,11 +1,11 @@
-using Asp.Versioning;
 using System.Text;
+using Asp.Versioning;
 using FlagForge.Auth;
 using FlagForge.Data;
-using FlagForge.Middleware;
 using FlagForge.Data.Services;
 using FlagForge.Data.Validations;
 using FlagForge.Data.ViewModels;
+using FlagForge.Middleware;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -13,14 +13,28 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 builder.Services.AddTransient<FeatureFlagService>();
 builder.Services.AddTransient<TenantService>();
 builder.Services.AddTransient<EnvironmentService>();
 builder.Services.AddTransient<AuthService>();
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(
+        "LocalDevelopment",
+        policy =>
+        {
+            policy
+                .WithOrigins()
+                .WithOrigins("http://localhost:3000", "http://localhost:5173")
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        }
+    );
+});
 
-var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
+var jwtOptions =
+    builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? throw new InvalidOperationException("Missing configuration: Jwt");
 if (string.IsNullOrWhiteSpace(jwtOptions.Key) || Encoding.UTF8.GetByteCount(jwtOptions.Key) < 32)
 {
@@ -43,8 +57,8 @@ builder
     });
 
 builder.Services.AddControllers();
-builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+builder
+    .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.TokenValidationParameters = new TokenValidationParameters
@@ -56,7 +70,7 @@ builder.Services
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.Key)),
             ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromMinutes(1)
+            ClockSkew = TimeSpan.FromMinutes(1),
         };
     });
 builder.Services.AddAuthorization();
@@ -83,6 +97,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseMiddleware<ApiKeyMiddleware>();
+app.UseCors("LocalDevelopment");
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseExceptionHandler();
