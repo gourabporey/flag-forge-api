@@ -20,11 +20,13 @@ public static class WebApplicationBuilderExtensions
 
     public static void AddCustomCors(this WebApplicationBuilder builder)
     {
-        var allowedOrigins = builder.Configuration.GetSection(CorsAllowedOrigin).Get<string[]>();
-        
+        var allowedOrigins =
+            builder.Configuration.GetValue<string>(CorsAllowedOrigin)?.Split(",").ToArray()
+            ?? throw new InvalidOperationException($"{CorsAllowedOrigin} is empty or null");
+
         Log.Information("Allowed Origins: {AllowedOrigins}", allowedOrigins);
 
-        if (allowedOrigins is null || allowedOrigins.Length == 0)
+        if (allowedOrigins.Length == 0)
         {
             throw new InvalidOperationException("Allowed Origins is not setup properly");
         }
@@ -97,8 +99,10 @@ public static class WebApplicationBuilderExtensions
     {
         var connectionString =
             builder.Configuration.GetConnectionString(DefaultConnectionString)
-            ?? throw new InvalidOperationException("Missing configuration : DefaultConnectionString");
-        
+            ?? throw new InvalidOperationException(
+                "Missing configuration : DefaultConnectionString"
+            );
+
         builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
     }
 
