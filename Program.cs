@@ -6,6 +6,7 @@ using Serilog;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.ConfigureLogging();
+builder.Configuration.AddEnvironmentVariables();
 builder.Services.AddTransient<FeatureFlagService>();
 builder.Services.AddTransient<TenantService>();
 builder.Services.AddTransient<EnvironmentService>();
