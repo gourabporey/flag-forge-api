@@ -1,9 +1,13 @@
-namespace FlagForge.Data;
-
+using FlagForge.Data.Persistence.Interfaces;
 using FlagForge.Data.Models;
 using Microsoft.EntityFrameworkCore;
 
-public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+namespace FlagForge.Data;
+
+public class AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    IDbExceptionTranslator dbExceptionTranslator
+) : DbContext(options)
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<FeatureFlagEnvironment> Environments => Set<FeatureFlagEnvironment>();
@@ -18,5 +22,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+    }
+
+    public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            return await base.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            throw dbExceptionTranslator.Translate(ex);
+        }
     }
 }

@@ -11,61 +11,44 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace FlagForge.Data.Services;
 
-public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions)
+public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions, ILogger<AuthService> logger)
 {
     private const int AdminRoleId = 1;
-    private readonly AppDbContext _context = context;
     private readonly JwtOptions _jwtOptions = jwtOptions.Value;
 
     public async Task<RegisterResponse> RegisterAsync(
         RegisterRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken ct = default)
     {
         var email = NormalizeEmail(request.Email);
-        if (string.IsNullOrWhiteSpace(email))
-        {
-            throw new ArgumentException("Email is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8)
-        {
-            throw new ArgumentException("Password must be at least 8 characters.");
-        }
-
-        var exists = await _context.Users
-            .AsNoTracking()
-            .AnyAsync(x => x.Email == email, cancellationToken);
-
-        if (exists)
-        {
-            throw new InvalidOperationException("A user with that email already exists.");
-        }
-
-        var tenantName = string.IsNullOrWhiteSpace(request.TenantName)
-            ? $"{email}'s workspace"
-            : request.TenantName.Trim();
+        var tenantName = request.TenantName?.Trim();
+        var createdAt = DateTimeOffset.UtcNow;
 
         var tenant = new Tenant
         {
-            Name = await CreateUniqueTenantNameAsync(tenantName, cancellationToken),
+            Name = CreateUniqueTenantNameAsync(email, tenantName),
             Plan = TenantPlan.Tier1,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = createdAt
         };
-
+        
+        var passwordHash = await Task.Run(() =>
+            BCrypt.Net.BCrypt.HashPassword(request.Password), ct);
+        
         var user = new User
         {
             Email = email,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
+            PasswordHash = passwordHash,
             FirstName = request.FirstName.Trim(),
             LastName = request.LastName.Trim(),
             IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = createdAt,
             UserRoles = new List<UserRole> { new() { RoleId = AdminRoleId } },
             UserTenants = new List<UserTenant> { new() { Tenant = tenant } }
         };
-
-        _context.Users.Add(user);
-        await _context.SaveChangesAsync(cancellationToken);
+        
+        context.Users.Add(user);
+        
+        await context.SaveChangesAsync(ct);
 
         return new RegisterResponse(user.UserId, user.Email);
     }
@@ -75,7 +58,7 @@ public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions)
         CancellationToken cancellationToken = default)
     {
         var email = NormalizeEmail(request.Email);
-        var user = await _context.Users
+        var user = await context.Users
             .AsNoTracking()
             .Where(x => x.Email == email && x.IsActive)
             .Select(x => new
@@ -91,14 +74,14 @@ public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions)
             return null;
         }
 
-        var roles = await _context.UserRoles
+        var roles = await context.UserRoles
             .AsNoTracking()
             .Where(x => x.UserId == user.UserId)
             .OrderBy(x => x.Role!.Name)
             .Select(x => x.Role!.Name)
             .ToListAsync(cancellationToken);
 
-        var tenants = await _context.UserTenants
+        var tenants = await context.UserTenants
             .AsNoTracking()
             .Where(x => x.UserId == user.UserId)
             .OrderBy(x => x.Tenant!.Name)
@@ -123,7 +106,7 @@ public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions)
         var accessToken = GenerateAccessToken(user.UserId, user.Email, selectedTenant.TenantId, roles, expiresAt);
         var refreshTokenValue = GenerateRefreshToken();
 
-        _context.RefreshTokens.Add(new RefreshToken
+        context.RefreshTokens.Add(new RefreshToken
         {
             UserId = user.UserId,
             Token = refreshTokenValue,
@@ -131,7 +114,7 @@ public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions)
             IsRevoked = false,
             CreatedAt = DateTimeOffset.UtcNow
         });
-        await _context.SaveChangesAsync(cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
 
         return new LoginResponse(
             accessToken,
@@ -174,18 +157,12 @@ public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions)
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private async Task<string> CreateUniqueTenantNameAsync(string requestedName, CancellationToken cancellationToken)
+    private static string CreateUniqueTenantNameAsync(string email, string? requestedTenant)
     {
-        var name = requestedName;
-        var suffix = 2;
-
-        while (await _context.Tenants.AsNoTracking().AnyAsync(x => x.Name == name, cancellationToken))
-        {
-            name = $"{requestedName} {suffix}";
-            suffix++;
-        }
-
-        return name;
+        if (!string.IsNullOrWhiteSpace(requestedTenant)) return requestedTenant;
+        var localPart = email[..email.IndexOf('@')];
+        var tenantName = $"{localPart}'s workspace {Guid.NewGuid().ToString("N")[..6]}";
+        return tenantName;
     }
 
     private static string GenerateRefreshToken()

@@ -1,6 +1,9 @@
 using Asp.Versioning;
+using FlagForge.Data.Exceptions;
 using FlagForge.Data.Services;
 using FlagForge.Data.ViewModels;
+using FlagForge.Extensions;
+using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Swashbuckle.AspNetCore.Annotations;
@@ -21,22 +24,18 @@ public class AuthController(AuthService authService) : ControllerBase
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<RegisterResponse>> Register(
         [FromBody] RegisterRequest request,
+        IValidator<RegisterRequest> requestValidator,
         CancellationToken ct
     )
     {
-        try
+        var validationResult = await requestValidator.ValidateAsync(request, ct);
+        if (!validationResult.IsValid)
         {
-            var response = await authService.RegisterAsync(request, ct);
-            return Created($"/api/v1/users/{response.UserId}", response);
+            throw new RequestValidationException(validationResult.ToErrorsDictionary());
         }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Conflict(ex.Message);
-        }
+
+        var response = await authService.RegisterAsync(request, ct);
+        return Created($"/api/v1/users/{response.UserId}", response);
     }
 
     [AllowAnonymous]
@@ -49,22 +48,9 @@ public class AuthController(AuthService authService) : ControllerBase
         CancellationToken ct
     )
     {
-        try
-        {
-            var response = await authService.LoginAsync(request, ct);
-            return response is null ? Unauthorized("Invalid email or password.") : Ok(response);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Forbid(ex.Message);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Unauthorized(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return Problem(ex.Message);
-        }
+        var response = await authService.LoginAsync(request, ct);
+        return response is null
+            ? throw new UnauthorizedAccessException("Invalid email or password.")
+            : Ok(response);
     }
 }
