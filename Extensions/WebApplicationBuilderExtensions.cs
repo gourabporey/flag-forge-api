@@ -3,11 +3,14 @@ using System.Text;
 using Asp.Versioning;
 using FlagForge.Auth;
 using FlagForge.Data;
+using FlagForge.Data.Caching;
+using FlagForge.Data.Caching.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using NewRelic.LogEnrichers.Serilog;
 using Serilog;
+using StackExchange.Redis;
 
 namespace FlagForge.Extensions;
 
@@ -114,5 +117,15 @@ public static class WebApplicationBuilderExtensions
             .CreateLogger();
 
         builder.Host.UseSerilog();
+    }
+
+    public static void ConfigureRedis(this WebApplicationBuilder builder)
+    {
+        builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+        {
+            var configuration = builder.Configuration.GetConnectionString("Redis");
+            return ConnectionMultiplexer.Connect(configuration!);
+        });
+        builder.Services.AddScoped<IAuthCache, RedisAuthCache>();
     }
 }

@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using FlagForge.Auth;
+using FlagForge.Data.Caching.Interfaces;
 using FlagForge.Data.Models;
 using FlagForge.Data.ViewModels;
 using Microsoft.EntityFrameworkCore;
@@ -11,14 +12,20 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace FlagForge.Data.Services;
 
-public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions, ILogger<AuthService> logger)
+public class AuthService(
+    AppDbContext context,
+    IOptions<JwtOptions> jwtOptions,
+    IAuthCache authCache,
+    ILogger<AuthService> logger
+)
 {
     private const int AdminRoleId = 1;
     private readonly JwtOptions _jwtOptions = jwtOptions.Value;
 
     public async Task<RegisterResponse> RegisterAsync(
         RegisterRequest request,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var email = NormalizeEmail(request.Email);
         var tenantName = request.TenantName?.Trim();
@@ -28,12 +35,14 @@ public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions, 
         {
             Name = CreateUniqueTenantNameAsync(email, tenantName),
             Plan = TenantPlan.Tier1,
-            CreatedAt = createdAt
+            CreatedAt = createdAt,
         };
-        
-        var passwordHash = await Task.Run(() =>
-            BCrypt.Net.BCrypt.HashPassword(request.Password), ct);
-        
+
+        var passwordHash = await Task.Run(
+            () => BCrypt.Net.BCrypt.HashPassword(request.Password),
+            ct
+        );
+
         var user = new User
         {
             Email = email,
@@ -43,11 +52,11 @@ public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions, 
             IsActive = true,
             CreatedAt = createdAt,
             UserRoles = new List<UserRole> { new() { RoleId = AdminRoleId } },
-            UserTenants = new List<UserTenant> { new() { Tenant = tenant } }
+            UserTenants = new List<UserTenant> { new() { Tenant = tenant } },
         };
-        
+
         context.Users.Add(user);
-        
+
         await context.SaveChangesAsync(ct);
 
         return new RegisterResponse(user.UserId, user.Email);
@@ -55,76 +64,110 @@ public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions, 
 
     public async Task<LoginResponse?> LoginAsync(
         LoginRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken ct = default
+    )
     {
         var email = NormalizeEmail(request.Email);
-        var user = await context.Users
-            .AsNoTracking()
-            .Where(x => x.Email == email && x.IsActive)
-            .Select(x => new
+        var userSnapshot = await authCache.GetAsync(email, ct);
+
+        if (userSnapshot is null)
+        {
+            logger.LogInformation("Cache miss for {Email}", request.Email);
+            
+            var user = await context
+                .Users.AsNoTracking()
+                .Where(x => x.Email == email && x.IsActive)
+                .Select(x => new
+                {
+                    x.UserId,
+                    x.PasswordHash,
+                    x.Email,
+                    Roles = x.UserRoles.Select(ur => ur.Role!.Name).ToList(),
+                    Tenants = x
+                        .UserTenants.Select(ut => new AuthTenantResponse(
+                            ut.TenantId,
+                            ut.Tenant!.Name
+                        ))
+                        .ToList(),
+                })
+                .FirstOrDefaultAsync(ct);
+
+            if (user is null)
+                return null;
+
+            if (user.Tenants.Count == 0)
             {
-                x.UserId,
-                x.Email,
-                x.PasswordHash
-            })
-            .SingleOrDefaultAsync(cancellationToken);
+                throw new InvalidOperationException("User is not assigned to any tenant.");
+            }
 
-        if (user is null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+            userSnapshot = new AuthSnapshot
+            {
+                UserId = user.UserId,
+                Email = user.Email,
+                PasswordHash = user.PasswordHash,
+                IsActive = true,
+                Roles = user.Roles,
+                Tenants = user.Tenants,
+            };
+
+            await authCache.SetAsync(userSnapshot, TimeSpan.FromMinutes(5), ct);
+        }
+        else
         {
+            logger.LogInformation("Cache hit for {Email}", request.Email);
+        }
+
+        var isPasswordValid = await Task.Run(
+            () => BCrypt.Net.BCrypt.Verify(request.Password, userSnapshot.PasswordHash),
+            ct
+        );
+        if (!isPasswordValid)
             return null;
-        }
-
-        var roles = await context.UserRoles
-            .AsNoTracking()
-            .Where(x => x.UserId == user.UserId)
-            .OrderBy(x => x.Role!.Name)
-            .Select(x => x.Role!.Name)
-            .ToListAsync(cancellationToken);
-
-        var tenants = await context.UserTenants
-            .AsNoTracking()
-            .Where(x => x.UserId == user.UserId)
-            .OrderBy(x => x.Tenant!.Name)
-            .Select(x => new AuthTenantResponse(x.TenantId, x.Tenant!.Name))
-            .ToListAsync(cancellationToken);
-
-        if (tenants.Count == 0)
-        {
-            throw new InvalidOperationException("User is not assigned to any tenant.");
-        }
 
         var selectedTenant = request.TenantId.HasValue
-            ? tenants.SingleOrDefault(x => x.TenantId == request.TenantId.Value)
-            : tenants.First();
-
+            ? userSnapshot.Tenants.FirstOrDefault(x => x.TenantId == request.TenantId.Value)
+            : userSnapshot.Tenants[0];
         if (selectedTenant is null)
         {
-            throw new UnauthorizedAccessException("User does not have access to the selected tenant.");
+            throw new UnauthorizedAccessException(
+                "User does not have access to the selected tenant."
+            );
         }
 
-        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(_jwtOptions.AccessTokenMinutes);
-        var accessToken = GenerateAccessToken(user.UserId, user.Email, selectedTenant.TenantId, roles, expiresAt);
+        var now = DateTimeOffset.UtcNow;
+        var expiresAt = now.AddMinutes(_jwtOptions.AccessTokenMinutes);
+        var accessToken = GenerateAccessToken(
+            userSnapshot.UserId,
+            userSnapshot.Email,
+            selectedTenant.TenantId,
+            userSnapshot.Roles,
+            expiresAt
+        );
         var refreshTokenValue = GenerateRefreshToken();
 
-        context.RefreshTokens.Add(new RefreshToken
-        {
-            UserId = user.UserId,
-            Token = refreshTokenValue,
-            ExpiresAt = DateTimeOffset.UtcNow.AddDays(_jwtOptions.RefreshTokenDays),
-            IsRevoked = false,
-            CreatedAt = DateTimeOffset.UtcNow
-        });
-        await context.SaveChangesAsync(cancellationToken);
+        context.RefreshTokens.Add(
+            new RefreshToken
+            {
+                UserId = userSnapshot.UserId,
+                Token = refreshTokenValue,
+                ExpiresAt = now.AddDays(_jwtOptions.RefreshTokenDays),
+                IsRevoked = false,
+                CreatedAt = now,
+            }
+        );
+
+        await context.SaveChangesAsync(ct);
 
         return new LoginResponse(
             accessToken,
             refreshTokenValue,
             expiresAt,
-            user.UserId,
-            user.Email,
+            userSnapshot.UserId,
+            userSnapshot.Email,
             selectedTenant.TenantId,
-            roles,
-            tenants);
+            userSnapshot.Roles,
+            userSnapshot.Tenants
+        );
     }
 
     private string GenerateAccessToken(
@@ -132,7 +175,8 @@ public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions, 
         string email,
         Guid tenantId,
         IReadOnlyCollection<string> roles,
-        DateTimeOffset expiresAt)
+        DateTimeOffset expiresAt
+    )
     {
         var claims = new List<Claim>
         {
@@ -140,7 +184,7 @@ public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions, 
             new(ClaimTypes.NameIdentifier, userId.ToString()),
             new(JwtRegisteredClaimNames.Email, email),
             new(ClaimTypes.Email, email),
-            new("tenantId", tenantId.ToString())
+            new("tenantId", tenantId.ToString()),
         };
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
 
@@ -152,14 +196,16 @@ public class AuthService(AppDbContext context, IOptions<JwtOptions> jwtOptions, 
             audience: _jwtOptions.Audience,
             claims: claims,
             expires: expiresAt.UtcDateTime,
-            signingCredentials: credentials);
+            signingCredentials: credentials
+        );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     private static string CreateUniqueTenantNameAsync(string email, string? requestedTenant)
     {
-        if (!string.IsNullOrWhiteSpace(requestedTenant)) return requestedTenant;
+        if (!string.IsNullOrWhiteSpace(requestedTenant))
+            return requestedTenant;
         var localPart = email[..email.IndexOf('@')];
         var tenantName = $"{localPart}'s workspace {Guid.NewGuid().ToString("N")[..6]}";
         return tenantName;

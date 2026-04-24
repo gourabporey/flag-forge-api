@@ -31,6 +31,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddValidators();
 builder.ConfigurePostgres();
+builder.ConfigureRedis();
 
 var app = builder.Build();
 
