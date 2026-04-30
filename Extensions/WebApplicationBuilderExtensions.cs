@@ -128,4 +128,20 @@ public static class WebApplicationBuilderExtensions
         });
         builder.Services.AddScoped<IAuthCache, RedisAuthCache>();
     }
+
+    public static void AddHealthChecks(this WebApplicationBuilder builder)
+    {
+        builder.Services.AddHealthChecks()
+            .AddNpgSql(
+                builder.Configuration.GetConnectionString(DefaultConnectionString)!,
+                name: "postgres",
+                tags: ["ready"],
+                timeout: TimeSpan.FromSeconds(10)
+            )
+            .AddRedis(
+                builder.Configuration.GetConnectionString("Redis")!,
+                name: "redis",
+                tags: ["ready"]
+            );
+    }
 }

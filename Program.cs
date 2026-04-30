@@ -32,6 +32,7 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddValidators();
 builder.ConfigurePostgres();
 builder.ConfigureRedis();
+builder.AddHealthChecks();
 
 var app = builder.Build();
 
@@ -45,5 +46,6 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHealthChecksEndpoints();
 
 app.Run();
